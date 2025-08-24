@@ -1,2 +1,2 @@
 # Crawler
-A simple app for storing Different kinds of Files
+A brilliant Web Crawler in Go.
