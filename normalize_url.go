@@ -14,7 +14,7 @@ func normalizeURL(rawURL string) (string, error) {
 
 	host := strings.TrimPrefix(u.Hostname(), "www.")
 
-	path := strings.TrimSuffix(u.EscapedPath(), "/")
+	path := strings.TrimSuffix(u.Path, "/")
 
 	// Rebuild normalized URL: host + path
 	normalized := host
