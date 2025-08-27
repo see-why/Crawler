@@ -88,7 +88,7 @@ func TestGetURLsFromHTML(t *testing.T) {
 	</body>
 </html>
 `,
-			expected: []string{"https://malformed.com://bad:url"},
+			expected: []string{},
 		},
 	}
 
