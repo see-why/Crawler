@@ -26,15 +26,20 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 			for _, attr := range n.Attr {
 				if attr.Key == "href" {
 					href := attr.Val
+					// Skip empty hrefs
+					if href == "" {
+						resolved := base.ResolveReference(&url.URL{})
+						urls = append(urls, resolved.String())
+						continue
+					}
+					
 					u, err := url.Parse(href)
 					if err != nil {
-						// If parsing fails, try to resolve it as-is relative to base
-						resolved := base.String() + href
-						urls = append(urls, resolved)
-					} else {
-						resolved := base.ResolveReference(u)
-						urls = append(urls, resolved.String())
+						// Skip malformed URLs rather than creating invalid ones
+						continue
 					}
+					resolved := base.ResolveReference(u)
+					urls = append(urls, resolved.String())
 				}
 			}
 		}
