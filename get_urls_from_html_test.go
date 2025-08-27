@@ -54,6 +54,42 @@ func TestGetURLsFromHTML(t *testing.T) {
 `,
 			expected: []string{},
 		},
+		{
+			name:     "anchor with no href",
+			inputURL: "https://nohref.com",
+			inputBody: `
+<html>
+	<body>
+		<a>no href</a>
+	</body>
+</html>
+`,
+			expected: []string{},
+		},
+		{
+			name:     "anchor with empty href",
+			inputURL: "https://emptyhref.com",
+			inputBody: `
+<html>
+	<body>
+		<a href="">empty href</a>
+	</body>
+</html>
+`,
+			expected: []string{"https://emptyhref.com"},
+		},
+		{
+			name:     "anchor with invalid href",
+			inputURL: "https://malformed.com",
+			inputBody: `
+<html>
+	<body>
+		<a href="://bad:url">bad url</a>
+	</body>
+</html>
+`,
+			expected: []string{"https://malformed.com://bad:url"},
+		},
 	}
 
 	for i, tc := range tests {
@@ -61,6 +97,10 @@ func TestGetURLsFromHTML(t *testing.T) {
 			actual, err := getURLsFromHTML(tc.inputBody, tc.inputURL)
 			if err != nil {
 				t.Errorf("Test %v - '%s' FAIL: unexpected error: %v", i, tc.name, err)
+				return
+			}
+			if len(actual) == 0 && len(tc.expected) == 0 {
+				// Both are empty, this is a pass
 				return
 			}
 			if !reflect.DeepEqual(actual, tc.expected) {
