@@ -1,9 +1,10 @@
 package main
 
 import (
-	"golang.org/x/net/html"
 	"net/url"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 // getURLsFromHTML extracts all URLs from anchor tags in the HTML and converts relative URLs to absolute using rawBaseURL.
@@ -26,7 +27,11 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 				if attr.Key == "href" {
 					href := attr.Val
 					u, err := url.Parse(href)
-					if err == nil {
+					if err != nil {
+						// If parsing fails, try to resolve it as-is relative to base
+						resolved := base.String() + href
+						urls = append(urls, resolved)
+					} else {
 						resolved := base.ResolveReference(u)
 						urls = append(urls, resolved.String())
 					}
