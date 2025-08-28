@@ -22,4 +22,13 @@ func main() {
 	// Exactly one argument - the BASE_URL
 	baseURL := args[0]
 	fmt.Printf("starting crawl of: %s\n", baseURL)
+
+	// Fetch HTML from the base URL
+	html, err := getHTML(baseURL)
+	if err != nil {
+		fmt.Printf("Error fetching HTML: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(html)
 }
