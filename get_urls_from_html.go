@@ -32,7 +32,7 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 						urls = append(urls, resolved.String())
 						continue
 					}
-					
+
 					u, err := url.Parse(href)
 					if err != nil {
 						// Skip malformed URLs rather than creating invalid ones
