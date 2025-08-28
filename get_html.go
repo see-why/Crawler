@@ -9,8 +9,18 @@ import (
 
 // getHTML fetches the HTML content from the given URL
 func getHTML(rawURL string) (string, error) {
-	// Make HTTP GET request
-	resp, err := http.Get(rawURL)
+	// Create a new HTTP client and request
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", rawURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	// Add User-Agent header to avoid being blocked
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Crawler/1.0)")
+
+	// Make HTTP request
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
