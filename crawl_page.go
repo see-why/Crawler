@@ -4,17 +4,42 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 )
 
-// crawlPage recursively crawls pages starting from rawCurrentURL, staying within the same domain as rawBaseURL
-func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
-	// Parse the base URL and current URL to compare domains
-	baseURL, err := url.Parse(rawBaseURL)
-	if err != nil {
-		fmt.Printf("Error parsing base URL %s: %v\n", rawBaseURL, err)
-		return
+type config struct {
+	pages              map[string]int
+	baseURL            *url.URL
+	mu                 *sync.Mutex
+	concurrencyControl chan struct{}
+	wg                 *sync.WaitGroup
+}
+
+// addPageVisit safely adds a page visit to the map and returns whether this is the first visit
+func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool) {
+	cfg.mu.Lock()
+	defer cfg.mu.Unlock()
+
+	count, exists := cfg.pages[normalizedURL]
+	if exists {
+		cfg.pages[normalizedURL] = count + 1
+		return false
 	}
 
+	cfg.pages[normalizedURL] = 1
+	return true
+}
+
+// crawlPage recursively crawls pages starting from rawCurrentURL, staying within the same domain as baseURL
+func (cfg *config) crawlPage(rawCurrentURL string) {
+	// Acquire concurrency control
+	cfg.concurrencyControl <- struct{}{}
+	defer func() {
+		<-cfg.concurrencyControl
+		cfg.wg.Done()
+	}()
+
+	// Parse the current URL
 	currentURL, err := url.Parse(rawCurrentURL)
 	if err != nil {
 		fmt.Printf("Error parsing current URL %s: %v\n", rawCurrentURL, err)
@@ -22,7 +47,7 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
 	}
 
 	// Check if current URL is on the same domain as base URL
-	if !strings.EqualFold(currentURL.Hostname(), baseURL.Hostname()) {
+	if !strings.EqualFold(currentURL.Hostname(), cfg.baseURL.Hostname()) {
 		return
 	}
 
@@ -33,14 +58,11 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
 		return
 	}
 
-	// Check if we've already crawled this page
-	if count, exists := pages[normalizedURL]; exists {
-		pages[normalizedURL] = count + 1
+	// Check if this is the first visit to this page
+	isFirst := cfg.addPageVisit(normalizedURL)
+	if !isFirst {
 		return
 	}
-
-	// Add this page to our map
-	pages[normalizedURL] = 1
 
 	// Print what we're crawling
 	fmt.Printf("Crawling: %s\n", rawCurrentURL)
@@ -53,14 +75,15 @@ func crawlPage(rawBaseURL, rawCurrentURL string, pages map[string]int) {
 	}
 
 	// Get all URLs from the HTML
-	urls, err := getURLsFromHTML(htmlBody, rawBaseURL)
+	urls, err := getURLsFromHTML(htmlBody, cfg.baseURL.String())
 	if err != nil {
 		fmt.Printf("Error getting URLs from HTML of %s: %v\n", rawCurrentURL, err)
 		return
 	}
 
-	// Recursively crawl each URL found on the page
+	// Recursively crawl each URL found on the page using goroutines
 	for _, foundURL := range urls {
-		crawlPage(rawBaseURL, foundURL, pages)
+		cfg.wg.Add(1)
+		go cfg.crawlPage(foundURL)
 	}
 }
