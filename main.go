@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"sync"
 )
 
 func main() {
@@ -20,18 +22,36 @@ func main() {
 	}
 
 	// Exactly one argument - the BASE_URL
-	baseURL := args[0]
-	fmt.Printf("starting crawl of: %s\n", baseURL)
+	baseURLString := args[0]
+	fmt.Printf("starting crawl of: %s\n", baseURLString)
 
-	// Initialize the pages map to track crawled pages
-	pages := make(map[string]int)
+	// Parse the base URL
+	baseURL, err := url.Parse(baseURLString)
+	if err != nil {
+		fmt.Printf("Error parsing base URL: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize the config struct
+	maxConcurrency := 10 // Test with higher concurrency
+	cfg := &config{
+		pages:              make(map[string]int),
+		baseURL:            baseURL,
+		mu:                 &sync.Mutex{},
+		concurrencyControl: make(chan struct{}, maxConcurrency),
+		wg:                 &sync.WaitGroup{},
+	}
 
 	// Start crawling from the base URL
-	crawlPage(baseURL, baseURL, pages)
+	cfg.wg.Add(1)
+	go cfg.crawlPage(baseURLString)
+
+	// Wait for all goroutines to complete
+	cfg.wg.Wait()
 
 	// Print the results
 	fmt.Println("\n=== Crawl Results ===")
-	for url, count := range pages {
+	for url, count := range cfg.pages {
 		fmt.Printf("%s: %d\n", url, count)
 	}
 }
