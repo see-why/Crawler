@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"net/url"
-	"strings"
 	"sync"
 )
 
@@ -47,7 +46,7 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	}
 
 	// Check if current URL is on the same domain as base URL
-	if !strings.EqualFold(currentURL.Hostname(), cfg.baseURL.Hostname()) {
+	if currentURL.Hostname() != cfg.baseURL.Hostname() {
 		return
 	}
 
