@@ -21,15 +21,15 @@ func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool, exceedsLimi
 	cfg.mu.Lock()
 	defer cfg.mu.Unlock()
 
-	// Check if we've reached the maximum number of pages before adding
-	if len(cfg.pages) >= cfg.maxPages {
-		return false, true
-	}
-
 	count, exists := cfg.pages[normalizedURL]
 	if exists {
 		cfg.pages[normalizedURL] = count + 1
 		return false, false
+	}
+
+	// Check if we've reached the maximum number of pages before adding a NEW page
+	if len(cfg.pages) >= cfg.maxPages {
+		return false, true
 	}
 
 	cfg.pages[normalizedURL] = 1
