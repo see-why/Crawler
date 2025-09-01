@@ -22,11 +22,18 @@ func printReport(pages map[string]int, baseURL string) {
 	fmt.Printf("  REPORT for %s\n", baseURL)
 	fmt.Println("=============================")
 
+	// Parse the baseURL to get the original scheme
+	parsedBaseURL, err := url.Parse(baseURL)
+	if err != nil {
+		fmt.Printf("Error parsing base URL: %v\n", err)
+		return
+	}
+
 	// Convert map to slice of structs for sorting
 	var pageList []Page
-	for url, count := range pages {
-		// Reconstruct full URL from normalized URL
-		fullURL := "https://" + url
+	for normalizedURL, count := range pages {
+		// Reconstruct full URL from normalized URL using original scheme
+		fullURL := parsedBaseURL.Scheme + "://" + normalizedURL
 		pageList = append(pageList, Page{URL: fullURL, Count: count})
 	}
 
