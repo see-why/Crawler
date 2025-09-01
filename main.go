@@ -4,9 +4,49 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 )
+
+// Page represents a page with its URL and count for sorting
+type Page struct {
+	URL   string
+	Count int
+}
+
+// printReport sorts and prints the crawl results in a formatted report
+func printReport(pages map[string]int, baseURL string) {
+	fmt.Println()
+	fmt.Println("=============================")
+	fmt.Printf("  REPORT for %s\n", baseURL)
+	fmt.Println("=============================")
+
+		fmt.Printf("Failed to generate report - invalid base URL %s: %v\n", baseURL, err)
+		return
+	}
+
+	// Convert map to slice of structs for sorting
+	var pageList []Page
+	for normalizedURL, count := range pages {
+		// Reconstruct full URL from normalized URL using original scheme
+		fullURL := parsedBaseURL.Scheme + "://" + normalizedURL
+		pageList = append(pageList, Page{URL: fullURL, Count: count})
+	}
+
+	// Sort by count (descending), then by URL (ascending) for ties
+	sort.Slice(pageList, func(i, j int) bool {
+		if pageList[i].Count != pageList[j].Count {
+			return pageList[i].Count > pageList[j].Count // Higher counts first
+		}
+		return pageList[i].URL < pageList[j].URL // Alphabetical for ties
+	})
+
+	// Print each page
+	for _, page := range pageList {
+		fmt.Printf("Found %d internal links to %s\n", page.Count, page.URL)
+	}
+}
 
 func main() {
 	// Get command line arguments (excluding program name)
@@ -102,9 +142,6 @@ func main() {
 	// Wait for all goroutines to complete
 	cfg.wg.Wait()
 
-	// Print the results
-	fmt.Println("\n=== Crawl Results ===")
-	for url, count := range cfg.pages {
-		fmt.Printf("%s: %d\n", url, count)
-	}
+	// Print the formatted report
+	printReport(cfg.pages, baseURLString)
 }
