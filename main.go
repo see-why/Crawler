@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -22,7 +23,10 @@ func printReport(pages map[string]int, baseURL string) {
 	fmt.Printf("  REPORT for %s\n", baseURL)
 	fmt.Println("=============================")
 
-		fmt.Printf("Failed to generate report - invalid base URL %s: %v\n", baseURL, err)
+	// Parse the baseURL to get the original scheme
+	parsedBaseURL, err := url.Parse(baseURL)
+	if err != nil {
+		fmt.Printf("Error parsing base URL: %v\n", err)
 		return
 	}
 
@@ -133,6 +137,7 @@ func main() {
 		mu:                 &sync.Mutex{},
 		concurrencyControl: make(chan struct{}, maxConcurrency),
 		wg:                 &sync.WaitGroup{},
+		ctx:                context.Background(),
 	}
 
 	// Start crawling from the base URL
