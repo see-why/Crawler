@@ -42,12 +42,10 @@ func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool, exceedsLimi
 
 // crawlPage recursively crawls pages starting from rawCurrentURL, staying within the same domain as baseURL
 func (cfg *config) crawlPage(rawCurrentURL string) {
-	// Ensure WaitGroup is always decremented exactly once
-	defer cfg.wg.Done()
-
 	// Check if context is cancelled
 	select {
 	case <-cfg.ctx.Done():
+		cfg.wg.Done() // Decrement WaitGroup since we're not doing any work
 		return
 	default:
 	}
@@ -56,6 +54,7 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	cfg.concurrencyControl <- struct{}{}
 	defer func() {
 		<-cfg.concurrencyControl
+		cfg.wg.Done() // Decrement WaitGroup after releasing concurrency control
 	}()
 
 	// Parse the current URL
