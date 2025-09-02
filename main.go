@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -33,9 +34,22 @@ func printReport(pages map[string]int, baseURL string) {
 	// Convert map to slice of structs for sorting
 	var pageList []Page
 	for normalizedURL, count := range pages {
-		// Reconstruct full URL from normalized URL using original scheme
-		fullURL := parsedBaseURL.Scheme + "://" + normalizedURL
-		pageList = append(pageList, Page{URL: fullURL, Count: count})
+		// Reconstruct full URL from normalized URL using the parsed base URL
+		// Split normalized URL to get host and path
+		parts := strings.SplitN(normalizedURL, "/", 2)
+		host := parts[0]
+		path := ""
+		if len(parts) > 1 {
+			path = "/" + parts[1]
+		}
+		
+		// Create full URL using the original scheme and port from base URL
+		fullURL := &url.URL{
+			Scheme: parsedBaseURL.Scheme,
+			Host:   host,
+			Path:   path,
+		}
+		pageList = append(pageList, Page{URL: fullURL.String(), Count: count})
 	}
 
 	// Sort by count (descending), then by URL (ascending) for ties
