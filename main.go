@@ -57,17 +57,18 @@ func main() {
 	args := os.Args[1:]
 
 	if len(args) < 1 {
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
 		fmt.Println("  URL: The website URL to crawl")
 		fmt.Println("  max_concurrency: Maximum number of concurrent goroutines (default: 10)")
 		fmt.Println("  max_pages: Maximum number of pages to crawl (default: 10)")
+		fmt.Println("  batch_size: Number of URLs to process in each batch (default: 5)")
 		fmt.Println("  Environment variable CRAWLER_MAX_CONCURRENCY can also be used")
 		os.Exit(1)
 	}
 
-	if len(args) > 3 {
+	if len(args) > 4 {
 		fmt.Println("too many arguments provided")
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
 		os.Exit(1)
 	}
 
@@ -79,6 +80,9 @@ func main() {
 
 	// Third argument - maxPages
 	maxPages := 10 // Default value
+
+	// Fourth argument - batchSize
+	batchSize := 5 // Default value
 
 	// Check if maxConcurrency was provided as command line argument
 	if len(args) >= 2 {
@@ -120,7 +124,21 @@ func main() {
 		}
 	}
 
-	fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d)\n", baseURLString, maxConcurrency, maxPages)
+	// Check if batchSize was provided as command line argument
+	if len(args) >= 4 {
+		if parsed, err := strconv.Atoi(args[3]); err != nil {
+			fmt.Printf("Error parsing batch_size '%s': %v\n", args[3], err)
+			fmt.Println("batch_size must be a positive integer")
+			os.Exit(1)
+		} else if parsed <= 0 {
+			fmt.Println("batch_size must be a positive integer")
+			os.Exit(1)
+		} else {
+			batchSize = parsed
+		}
+	}
+
+	fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d)\n", baseURLString, maxConcurrency, maxPages, batchSize)
 
 	// Parse the base URL
 	baseURL, err := url.Parse(baseURLString)
@@ -134,6 +152,7 @@ func main() {
 		pages:              make(map[string]int),
 		baseURL:            baseURL,
 		maxPages:           maxPages,
+		batchSize:          batchSize,
 		mu:                 &sync.Mutex{},
 		concurrencyControl: make(chan struct{}, maxConcurrency),
 		wg:                 &sync.WaitGroup{},
