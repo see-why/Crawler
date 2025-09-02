@@ -12,6 +12,7 @@ type config struct {
 	pages              map[string]int
 	baseURL            *url.URL
 	maxPages           int
+	batchSize          int
 	mu                 *sync.Mutex
 	concurrencyControl chan struct{}
 	wg                 *sync.WaitGroup
@@ -106,17 +107,17 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	}
 
 	// Process URLs in batches to avoid creating too many goroutines at once
-	batchSize := 5
+	batchSize := cfg.batchSize
 	for i := 0; i < len(urls); i += batchSize {
 		end := i + batchSize
 		if end > len(urls) {
 			end = len(urls)
 		}
-		
+
 		// Process this batch of URLs
 		for j := i; j < end; j++ {
 			foundURL := urls[j]
-			
+
 			// Check context before starting new goroutine
 			select {
 			case <-cfg.ctx.Done():
