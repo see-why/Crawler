@@ -1,17 +1,33 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
-// getHTML fetches the HTML content from the given URL
+// Global HTTP client with optimized settings for concurrent requests
+var httpClient = &http.Client{
+	Timeout: 10 * time.Second,
+	Transport: &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     30 * time.Second,
+	},
+}
+
+// getHTML fetches the HTML content from the given URL with timeout
 func getHTML(rawURL string) (string, error) {
-	// Create a new HTTP client and request
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", rawURL, nil)
+	return getHTMLWithContext(context.Background(), rawURL)
+}
+
+// getHTMLWithContext fetches HTML with context support for cancellation
+func getHTMLWithContext(ctx context.Context, rawURL string) (string, error) {
+	// Create a new HTTP request with context
+	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -19,8 +35,8 @@ func getHTML(rawURL string) (string, error) {
 	// Add User-Agent header to avoid being blocked
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Crawler/1.0)")
 
-	// Make HTTP request
-	resp, err := client.Do(req)
+	// Make HTTP request using the global client
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", err
 	}
