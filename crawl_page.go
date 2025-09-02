@@ -1,18 +1,22 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"sync"
+	"time"
 )
 
 type config struct {
 	pages              map[string]int
 	baseURL            *url.URL
 	maxPages           int
+	batchSize          int
 	mu                 *sync.Mutex
 	concurrencyControl chan struct{}
 	wg                 *sync.WaitGroup
+	ctx                context.Context
 }
 
 // addPageVisit safely adds a page visit to the map and returns whether this is the first visit
@@ -38,11 +42,19 @@ func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool, exceedsLimi
 
 // crawlPage recursively crawls pages starting from rawCurrentURL, staying within the same domain as baseURL
 func (cfg *config) crawlPage(rawCurrentURL string) {
+	// Check if context is cancelled
+	select {
+	case <-cfg.ctx.Done():
+		cfg.wg.Done() // Decrement WaitGroup since we're not doing any work
+		return
+	default:
+	}
+
 	// Acquire concurrency control
 	cfg.concurrencyControl <- struct{}{}
 	defer func() {
 		<-cfg.concurrencyControl
-		cfg.wg.Done()
+		cfg.wg.Done() // Decrement WaitGroup after releasing concurrency control
 	}()
 
 	// Parse the current URL
@@ -76,8 +88,12 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	// Print what we're crawling
 	fmt.Printf("Crawling: %s\n", rawCurrentURL)
 
-	// Get the HTML from the current URL
-	htmlBody, err := getHTML(rawCurrentURL)
+	// Create a context with timeout for this specific request
+	requestCtx, cancel := context.WithTimeout(cfg.ctx, 15*time.Second)
+	defer cancel()
+
+	// Get the HTML from the current URL with context
+	htmlBody, err := getHTMLWithContext(requestCtx, rawCurrentURL)
 	if err != nil {
 		fmt.Printf("Error getting HTML from %s: %v\n", rawCurrentURL, err)
 		return
@@ -90,9 +106,30 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 		return
 	}
 
-	// Recursively crawl each URL found on the page using goroutines
-	for _, foundURL := range urls {
-		cfg.wg.Add(1)
-		go cfg.crawlPage(foundURL)
+	// Process URLs in batches to avoid creating too many goroutines at once
+	batchSize := cfg.batchSize
+	for i := 0; i < len(urls); i += batchSize {
+		end := i + batchSize
+		if end > len(urls) {
+			end = len(urls)
+		}
+
+		// Process this batch of URLs
+		for j := i; j < end; j++ {
+			foundURL := urls[j]
+
+			// Add to WaitGroup first to avoid race condition
+			cfg.wg.Add(1)
+
+			// Check context before starting new goroutine
+			select {
+			case <-cfg.ctx.Done():
+				// Context cancelled, decrement WaitGroup and return
+				cfg.wg.Done()
+				return
+			default:
+				go cfg.crawlPage(foundURL)
+			}
+		}
 	}
 }

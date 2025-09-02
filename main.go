@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -22,16 +24,32 @@ func printReport(pages map[string]int, baseURL string) {
 	fmt.Printf("  REPORT for %s\n", baseURL)
 	fmt.Println("=============================")
 
-		fmt.Printf("Failed to generate report - invalid base URL %s: %v\n", baseURL, err)
+	// Parse the baseURL to get the original scheme
+	parsedBaseURL, err := url.Parse(baseURL)
+	if err != nil {
+		fmt.Printf("Error parsing base URL: %v\n", err)
 		return
 	}
 
 	// Convert map to slice of structs for sorting
 	var pageList []Page
 	for normalizedURL, count := range pages {
-		// Reconstruct full URL from normalized URL using original scheme
-		fullURL := parsedBaseURL.Scheme + "://" + normalizedURL
-		pageList = append(pageList, Page{URL: fullURL, Count: count})
+		// Reconstruct full URL from normalized URL using the parsed base URL
+		// Split normalized URL to get host and path
+		parts := strings.SplitN(normalizedURL, "/", 2)
+		host := parts[0]
+		path := ""
+		if len(parts) > 1 {
+			path = "/" + parts[1]
+		}
+		
+		// Create full URL using the original scheme and port from base URL
+		fullURL := &url.URL{
+			Scheme: parsedBaseURL.Scheme,
+			Host:   host,
+			Path:   path,
+		}
+		pageList = append(pageList, Page{URL: fullURL.String(), Count: count})
 	}
 
 	// Sort by count (descending), then by URL (ascending) for ties
@@ -53,17 +71,18 @@ func main() {
 	args := os.Args[1:]
 
 	if len(args) < 1 {
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
 		fmt.Println("  URL: The website URL to crawl")
 		fmt.Println("  max_concurrency: Maximum number of concurrent goroutines (default: 10)")
 		fmt.Println("  max_pages: Maximum number of pages to crawl (default: 10)")
+		fmt.Println("  batch_size: Number of URLs to process in each batch (default: 5)")
 		fmt.Println("  Environment variable CRAWLER_MAX_CONCURRENCY can also be used")
 		os.Exit(1)
 	}
 
-	if len(args) > 3 {
+	if len(args) > 4 {
 		fmt.Println("too many arguments provided")
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
 		os.Exit(1)
 	}
 
@@ -75,6 +94,9 @@ func main() {
 
 	// Third argument - maxPages
 	maxPages := 10 // Default value
+
+	// Fourth argument - batchSize
+	batchSize := 5 // Default value
 
 	// Check if maxConcurrency was provided as command line argument
 	if len(args) >= 2 {
@@ -116,7 +138,21 @@ func main() {
 		}
 	}
 
-	fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d)\n", baseURLString, maxConcurrency, maxPages)
+	// Check if batchSize was provided as command line argument
+	if len(args) >= 4 {
+		if parsed, err := strconv.Atoi(args[3]); err != nil {
+			fmt.Printf("Error parsing batch_size '%s': %v\n", args[3], err)
+			fmt.Println("batch_size must be a positive integer")
+			os.Exit(1)
+		} else if parsed <= 0 {
+			fmt.Println("batch_size must be a positive integer")
+			os.Exit(1)
+		} else {
+			batchSize = parsed
+		}
+	}
+
+	fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d)\n", baseURLString, maxConcurrency, maxPages, batchSize)
 
 	// Parse the base URL
 	baseURL, err := url.Parse(baseURLString)
@@ -130,9 +166,11 @@ func main() {
 		pages:              make(map[string]int),
 		baseURL:            baseURL,
 		maxPages:           maxPages,
+		batchSize:          batchSize,
 		mu:                 &sync.Mutex{},
 		concurrencyControl: make(chan struct{}, maxConcurrency),
 		wg:                 &sync.WaitGroup{},
+		ctx:                context.Background(),
 	}
 
 	// Start crawling from the base URL
