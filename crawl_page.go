@@ -119,12 +119,16 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 		for j := i; j < end; j++ {
 			foundURL := urls[j]
 
+			// Add to WaitGroup first to avoid race condition
+			cfg.wg.Add(1)
+
 			// Check context before starting new goroutine
 			select {
 			case <-cfg.ctx.Done():
+				// Context cancelled, decrement WaitGroup and return
+				cfg.wg.Done()
 				return
 			default:
-				cfg.wg.Add(1)
 				go cfg.crawlPage(foundURL)
 			}
 		}
