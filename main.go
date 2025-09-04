@@ -18,7 +18,7 @@ type Page struct {
 }
 
 // printReport sorts and prints the crawl results in a formatted report
-func printReport(pages map[string]int, baseURL string) {
+func printReport(pages map[string]int, externalLinks map[string]int, baseURL string) {
 	fmt.Println()
 	fmt.Println("=============================")
 	fmt.Printf("  REPORT for %s\n", baseURL)
@@ -42,7 +42,7 @@ func printReport(pages map[string]int, baseURL string) {
 		if len(parts) > 1 {
 			path = "/" + parts[1]
 		}
-		
+
 		// Create full URL using the original scheme and port from base URL
 		fullURL := &url.URL{
 			Scheme: parsedBaseURL.Scheme,
@@ -60,9 +60,29 @@ func printReport(pages map[string]int, baseURL string) {
 		return pageList[i].URL < pageList[j].URL // Alphabetical for ties
 	})
 
-	// Print each page
+	// Print each internal page
 	for _, page := range pageList {
 		fmt.Printf("Found %d internal links to %s\n", page.Count, page.URL)
+	}
+
+	// Print external links summary
+	fmt.Println()
+	fmt.Println("-----------------------------")
+	fmt.Println("  EXTERNAL LINKS REPORT")
+	fmt.Println("-----------------------------")
+	// Convert externalLinks map to slice for sorting
+	var externalList []Page
+	for url, count := range externalLinks {
+		externalList = append(externalList, Page{URL: url, Count: count})
+	}
+	sort.Slice(externalList, func(i, j int) bool {
+		if externalList[i].Count != externalList[j].Count {
+			return externalList[i].Count > externalList[j].Count
+		}
+		return externalList[i].URL < externalList[j].URL
+	})
+	for _, ext := range externalList {
+		fmt.Printf("Found %d external links to %s\n", ext.Count, ext.URL)
 	}
 }
 
@@ -164,6 +184,7 @@ func main() {
 	// Initialize the config struct
 	cfg := &config{
 		pages:              make(map[string]int),
+		externalLinks:      make(map[string]int),
 		baseURL:            baseURL,
 		maxPages:           maxPages,
 		batchSize:          batchSize,
@@ -181,5 +202,5 @@ func main() {
 	cfg.wg.Wait()
 
 	// Print the formatted report
-	printReport(cfg.pages, baseURLString)
+	printReport(cfg.pages, cfg.externalLinks, baseURLString)
 }
