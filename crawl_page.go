@@ -10,6 +10,7 @@ import (
 
 type config struct {
 	pages              map[string]int
+	externalLinks      map[string]int
 	baseURL            *url.URL
 	maxPages           int
 	batchSize          int
@@ -66,6 +67,10 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 
 	// Check if current URL is on the same domain as base URL
 	if currentURL.Hostname() != cfg.baseURL.Hostname() {
+		// Track external link
+		cfg.mu.Lock()
+		cfg.externalLinks[rawCurrentURL]++
+		cfg.mu.Unlock()
 		return
 	}
 
