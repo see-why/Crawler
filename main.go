@@ -18,7 +18,7 @@ type Page struct {
 }
 
 // printReport sorts and prints the crawl results in a formatted report
-func printReport(pages map[string]int, externalLinks map[string]int, baseURL string) {
+func printReport(pages map[string]int, externalLinks map[string]int, baseURL string) error {
 	fmt.Println()
 	fmt.Println("=============================")
 	fmt.Printf("  REPORT for %s\n", baseURL)
@@ -27,8 +27,7 @@ func printReport(pages map[string]int, externalLinks map[string]int, baseURL str
 	// Parse the baseURL to get the original scheme
 	parsedBaseURL, err := url.Parse(baseURL)
 	if err != nil {
-		fmt.Printf("Error parsing base URL: %v\n", err)
-		return
+		return fmt.Errorf("error parsing base URL: %v", err)
 	}
 
 	// Convert map to slice of structs for sorting
@@ -84,6 +83,8 @@ func printReport(pages map[string]int, externalLinks map[string]int, baseURL str
 	for _, ext := range externalList {
 		fmt.Printf("Found %d external links to %s\n", ext.Count, ext.URL)
 	}
+	
+	return nil
 }
 
 func main() {
@@ -219,7 +220,10 @@ func main() {
 	cfg.wg.Wait()
 
 	// Print the formatted report
-	printReport(cfg.pages, cfg.externalLinks, baseURLString)
+	if err := printReport(cfg.pages, cfg.externalLinks, baseURLString); err != nil {
+		fmt.Printf("Error generating report: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Generate graph visualization if requested
 	if generateGraph {
