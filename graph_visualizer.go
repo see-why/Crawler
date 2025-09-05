@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"os"
+	"runtime"
 	"sort"
 	"strings"
 
 	"github.com/fogleman/gg"
+	"github.com/golang/freetype/truetype"
+	"golang.org/x/image/font/gofont/goregular"
 )
 
 // Node represents a page node in the graph
@@ -33,6 +37,78 @@ type GraphVisualizer struct {
 	edges []Edge
 	width int
 	height int
+}
+
+// getFontPaths returns system font paths based on the operating system
+func getFontPaths() []string {
+	switch runtime.GOOS {
+	case "windows":
+		return []string{
+			"C:/Windows/Fonts/arial.ttf",
+			"C:/Windows/Fonts/Arial.ttf",
+			"C:/Windows/Fonts/calibri.ttf",
+			"C:/Windows/Fonts/Calibri.ttf",
+			"C:/Windows/Fonts/segoeui.ttf",
+			"C:/Windows/Fonts/SegoeUI.ttf",
+		}
+	case "darwin": // macOS
+		return []string{
+			"/System/Library/Fonts/Helvetica.ttc",
+			"/System/Library/Fonts/HelveticaNeue.ttc",
+			"/System/Library/Fonts/ArialHB.ttc",
+			"/System/Library/Fonts/AppleSystemUIFont.ttc",
+			"/Library/Fonts/Arial.ttf",
+			"/System/Library/Fonts/Times.ttc",
+		}
+	case "linux":
+		return []string{
+			"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+			"/usr/share/fonts/TTF/DejaVuSans.ttf",
+			"/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+			"/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+			"/usr/share/fonts/opentype/noto/NotoSans-Regular.ttf",
+			"/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+			"/usr/share/fonts/corefonts/arial.ttf",
+			"/usr/local/share/fonts/arial.ttf",
+		}
+	default:
+		// Fallback for other Unix-like systems
+		return []string{
+			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+			"/usr/share/fonts/TTF/DejaVuSans.ttf",
+			"/usr/local/share/fonts/arial.ttf",
+		}
+	}
+}
+
+// loadSystemFont attempts to load a system font, trying multiple paths
+func loadSystemFont(dc *gg.Context, size float64) error {
+	fontPaths := getFontPaths()
+	
+	for _, fontPath := range fontPaths {
+		if _, err := os.Stat(fontPath); err == nil {
+			// Font file exists, try to load it
+			if err := dc.LoadFontFace(fontPath, size); err == nil {
+				return nil // Successfully loaded
+			}
+		}
+	}
+	
+	// If no system fonts work, try embedded Go font as fallback
+	fontData := goregular.TTF
+	f, err := truetype.Parse(fontData)
+	if err == nil {
+		face := truetype.NewFace(f, &truetype.Options{
+			Size: size,
+			DPI:  72,
+		})
+		dc.SetFontFace(face)
+		return nil // Successfully loaded embedded font
+	}
+	
+	// If everything fails, return an error but don't fail completely
+	return fmt.Errorf("no suitable system fonts found and embedded font failed")
 }
 
 // NewGraphVisualizer creates a new graph visualizer
@@ -214,12 +290,10 @@ func (gv *GraphVisualizer) DrawGraph(filename string) error {
 	// Draw labels for nodes
 	dc.SetRGB(0, 0, 0)
 	fontSize := 10.0
-	if err := dc.LoadFontFace("/System/Library/Fonts/Arial.ttf", fontSize); err != nil {
-		// Try alternative system fonts
-		if err := dc.LoadFontFace("/System/Library/Fonts/Helvetica.ttc", fontSize); err != nil {
-			// If no system fonts work, just use smaller text without custom font
-			fontSize = 12.0
-		}
+	if err := loadSystemFont(dc, fontSize); err != nil {
+		// If no system fonts work, continue without custom font
+		// The graphics library will use its default rendering
+		fmt.Printf("Warning: Could not load system font: %v\n", err)
 	}
 	
 	for _, node := range gv.nodes {
@@ -241,20 +315,16 @@ func (gv *GraphVisualizer) DrawGraph(filename string) error {
 	// Add title
 	dc.SetRGB(0, 0, 0)
 	titleSize := 16.0
-	if err := dc.LoadFontFace("/System/Library/Fonts/Arial.ttf", titleSize); err != nil {
-		if err := dc.LoadFontFace("/System/Library/Fonts/Helvetica.ttc", titleSize); err != nil {
-			titleSize = 18.0
-		}
+	if err := loadSystemFont(dc, titleSize); err != nil {
+		fmt.Printf("Warning: Could not load system font for title: %v\n", err)
 	}
 	dc.DrawString("Web Crawler Link Graph", 20, 30)
 	
 	// Add legend
 	dc.SetRGB(0, 0, 0)
 	legendSize := 12.0
-	if err := dc.LoadFontFace("/System/Library/Fonts/Arial.ttf", legendSize); err != nil {
-		if err := dc.LoadFontFace("/System/Library/Fonts/Helvetica.ttc", legendSize); err != nil {
-			legendSize = 14.0
-		}
+	if err := loadSystemFont(dc, legendSize); err != nil {
+		fmt.Printf("Warning: Could not load system font for legend: %v\n", err)
 	}
 	
 	legendY := float64(gv.height) - 60
