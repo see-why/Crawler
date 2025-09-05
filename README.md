@@ -16,7 +16,7 @@ A high-performance concurrent web crawler built in Go. This crawler efficiently 
 - ⚙️ **Configurable batch processing** for optimal goroutine management
 - 🕐 **Context-based timeouts** for robust error handling
 
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
