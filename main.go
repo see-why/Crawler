@@ -91,18 +91,19 @@ func main() {
 	args := os.Args[1:]
 
 	if len(args) < 1 {
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size] [--graph]")
 		fmt.Println("  URL: The website URL to crawl")
 		fmt.Println("  max_concurrency: Maximum number of concurrent goroutines (default: 10)")
 		fmt.Println("  max_pages: Maximum number of pages to crawl (default: 10)")
 		fmt.Println("  batch_size: Number of URLs to process in each batch (default: 5)")
+		fmt.Println("  --graph: Generate a graph visualization (saves as graph.png)")
 		fmt.Println("  Environment variable CRAWLER_MAX_CONCURRENCY can also be used")
 		os.Exit(1)
 	}
 
-	if len(args) > 4 {
+	if len(args) > 5 {
 		fmt.Println("too many arguments provided")
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size] [--graph]")
 		os.Exit(1)
 	}
 
@@ -172,7 +173,17 @@ func main() {
 		}
 	}
 
-	fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d)\n", baseURLString, maxConcurrency, maxPages, batchSize)
+	// Check for graph flag
+	generateGraph := false
+	if len(args) >= 5 && args[4] == "--graph" {
+		generateGraph = true
+	}
+
+	if generateGraph {
+		fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d) [Graph generation enabled]\n", baseURLString, maxConcurrency, maxPages, batchSize)
+	} else {
+		fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d)\n", baseURLString, maxConcurrency, maxPages, batchSize)
+	}
 
 	// Parse the base URL
 	baseURL, err := url.Parse(baseURLString)
@@ -203,4 +214,14 @@ func main() {
 
 	// Print the formatted report
 	printReport(cfg.pages, cfg.externalLinks, baseURLString)
+
+	// Generate graph visualization if requested
+	if generateGraph {
+		fmt.Println()
+		fmt.Println("Generating graph visualization...")
+		filename := "graph.png"
+		if err := GenerateGraphVisualization(cfg.pages, cfg.externalLinks, baseURLString, filename); err != nil {
+			fmt.Printf("Error generating graph: %v\n", err)
+		}
+	}
 }
