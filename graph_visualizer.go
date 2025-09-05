@@ -403,12 +403,12 @@ func (gv *GraphVisualizer) sanitizeURLForVisualization(urlStr string) string {
 		// Return a safe fallback label for malformed URLs
 		return "[Invalid URL]"
 	}
-	
+
 	// Basic validation - ensure it's a reasonable URL
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "[Invalid URL]"
 	}
-	
+
 	// Return the original URL if it's valid
 	return urlStr
 }
