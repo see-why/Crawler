@@ -83,7 +83,7 @@ func printReport(pages map[string]int, externalLinks map[string]int, baseURL str
 	for _, ext := range externalList {
 		fmt.Printf("Found %d external links to %s\n", ext.Count, ext.URL)
 	}
-	
+
 	return nil
 }
 
