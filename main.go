@@ -18,7 +18,7 @@ type Page struct {
 }
 
 // printReport sorts and prints the crawl results in a formatted report
-func printReport(pages map[string]int, externalLinks map[string]int, baseURL string) {
+func printReport(pages map[string]int, externalLinks map[string]int, baseURL string) error {
 	fmt.Println()
 	fmt.Println("=============================")
 	fmt.Printf("  REPORT for %s\n", baseURL)
@@ -27,8 +27,7 @@ func printReport(pages map[string]int, externalLinks map[string]int, baseURL str
 	// Parse the baseURL to get the original scheme
 	parsedBaseURL, err := url.Parse(baseURL)
 	if err != nil {
-		fmt.Printf("Error parsing base URL: %v\n", err)
-		return
+		return fmt.Errorf("error parsing base URL: %v", err)
 	}
 
 	// Convert map to slice of structs for sorting
@@ -84,6 +83,8 @@ func printReport(pages map[string]int, externalLinks map[string]int, baseURL str
 	for _, ext := range externalList {
 		fmt.Printf("Found %d external links to %s\n", ext.Count, ext.URL)
 	}
+
+	return nil
 }
 
 func main() {
@@ -91,18 +92,31 @@ func main() {
 	args := os.Args[1:]
 
 	if len(args) < 1 {
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size] [--graph]")
 		fmt.Println("  URL: The website URL to crawl")
 		fmt.Println("  max_concurrency: Maximum number of concurrent goroutines (default: 10)")
 		fmt.Println("  max_pages: Maximum number of pages to crawl (default: 10)")
 		fmt.Println("  batch_size: Number of URLs to process in each batch (default: 5)")
+		fmt.Println("  --graph: Generate a graph visualization (saves as graph.png)")
 		fmt.Println("  Environment variable CRAWLER_MAX_CONCURRENCY can also be used")
 		os.Exit(1)
 	}
 
+	// Check for graph flag first and remove it from args for cleaner processing
+	generateGraph := false
+	var filteredArgs []string
+	for _, arg := range args {
+		if arg == "--graph" {
+			generateGraph = true
+		} else {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+	args = filteredArgs
+
 	if len(args) > 4 {
 		fmt.Println("too many arguments provided")
-		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size]")
+		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size] [--graph]")
 		os.Exit(1)
 	}
 
@@ -172,7 +186,11 @@ func main() {
 		}
 	}
 
-	fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d)\n", baseURLString, maxConcurrency, maxPages, batchSize)
+	if generateGraph {
+		fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d) [Graph generation enabled]\n", baseURLString, maxConcurrency, maxPages, batchSize)
+	} else {
+		fmt.Printf("starting crawl of: %s (max concurrency: %d, max pages: %d, batch size: %d)\n", baseURLString, maxConcurrency, maxPages, batchSize)
+	}
 
 	// Parse the base URL
 	baseURL, err := url.Parse(baseURLString)
@@ -202,5 +220,18 @@ func main() {
 	cfg.wg.Wait()
 
 	// Print the formatted report
-	printReport(cfg.pages, cfg.externalLinks, baseURLString)
+	if err := printReport(cfg.pages, cfg.externalLinks, baseURLString); err != nil {
+		fmt.Printf("Error generating report: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Generate graph visualization if requested
+	if generateGraph {
+		fmt.Println()
+		fmt.Println("Generating graph visualization...")
+		filename := "graph.png"
+		if err := GenerateGraphVisualization(cfg.pages, cfg.externalLinks, baseURLString, filename); err != nil {
+			fmt.Printf("Error generating graph: %v\n", err)
+		}
+	}
 }
