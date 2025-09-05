@@ -101,7 +101,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	if len(args) > 5 {
+	// Check for graph flag first and remove it from args for cleaner processing
+	generateGraph := false
+	var filteredArgs []string
+	for _, arg := range args {
+		if arg == "--graph" {
+			generateGraph = true
+		} else {
+			filteredArgs = append(filteredArgs, arg)
+		}
+	}
+	args = filteredArgs
+
+	if len(args) > 4 {
 		fmt.Println("too many arguments provided")
 		fmt.Println("Usage: crawler <URL> [max_concurrency] [max_pages] [batch_size] [--graph]")
 		os.Exit(1)
@@ -171,12 +183,6 @@ func main() {
 		} else {
 			batchSize = parsed
 		}
-	}
-
-	// Check for graph flag
-	generateGraph := false
-	if len(args) >= 5 && args[4] == "--graph" {
-		generateGraph = true
 	}
 
 	if generateGraph {
