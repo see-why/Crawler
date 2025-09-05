@@ -138,7 +138,9 @@ func (gv *GraphVisualizer) AddInternalPages(pages map[string]int, baseURL string
 	for normalizedURL, count := range pages {
 		// Reconstruct full URL
 		fullURL := parsedBase.Scheme + "://" + normalizedURL
-		pageList = append(pageList, PageInfo{URL: fullURL, Count: count})
+		// Sanitize the URL before adding to visualization
+		sanitizedURL := gv.sanitizeURLForVisualization(fullURL)
+		pageList = append(pageList, PageInfo{URL: sanitizedURL, Count: count})
 	}
 
 	// Sort by count (descending) for better visualization
@@ -171,7 +173,7 @@ func (gv *GraphVisualizer) AddInternalPages(pages map[string]int, baseURL string
 			IsExternal: false,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -184,7 +186,9 @@ func (gv *GraphVisualizer) AddExternalLinks(externalLinks map[string]int) {
 	}
 	var extList []ExternalInfo
 	for url, count := range externalLinks {
-		extList = append(extList, ExternalInfo{URL: url, Count: count})
+		// Sanitize URL before adding to visualization
+		sanitizedURL := gv.sanitizeURLForVisualization(url)
+		extList = append(extList, ExternalInfo{URL: sanitizedURL, Count: count})
 	}
 
 	// Sort by count (descending)
@@ -226,13 +230,14 @@ func (gv *GraphVisualizer) AddEdges(pages map[string]int, externalLinks map[stri
 	}
 
 	// Create edges between internal pages (simplified - all connected to main page)
-	mainURL := baseURL
+	mainURL := gv.sanitizeURLForVisualization(baseURL)
 	for normalizedURL := range pages {
 		fullURL := parsedBase.Scheme + "://" + normalizedURL
-		if fullURL != mainURL {
+		sanitizedURL := gv.sanitizeURLForVisualization(fullURL)
+		if sanitizedURL != mainURL {
 			gv.edges = append(gv.edges, Edge{
 				From:   mainURL,
-				To:     fullURL,
+				To:     sanitizedURL,
 				Weight: pages[normalizedURL],
 			})
 		}
@@ -240,13 +245,14 @@ func (gv *GraphVisualizer) AddEdges(pages map[string]int, externalLinks map[stri
 
 	// Create edges to external links (from main page)
 	for extURL, count := range externalLinks {
+		sanitizedExtURL := gv.sanitizeURLForVisualization(extURL)
 		gv.edges = append(gv.edges, Edge{
 			From:   mainURL,
-			To:     extURL,
+			To:     sanitizedExtURL,
 			Weight: count,
 		})
 	}
-	
+
 	return nil
 }
 
@@ -361,7 +367,8 @@ func (gv *GraphVisualizer) DrawGraph(filename string) error {
 func (gv *GraphVisualizer) createShortLabel(urlStr string) string {
 	parsed, err := url.Parse(urlStr)
 	if err != nil {
-		return urlStr
+		// Return sanitized fallback for malformed URLs
+		return "[Invalid URL]"
 	}
 
 	// For external links, show domain
@@ -387,6 +394,23 @@ func (gv *GraphVisualizer) createShortLabel(urlStr string) string {
 		return "/" + pathParts[0] + "/..."
 	}
 	return parsed.Path
+}
+
+// sanitizeURLForVisualization validates and sanitizes a URL for safe display
+func (gv *GraphVisualizer) sanitizeURLForVisualization(urlStr string) string {
+	parsed, err := url.Parse(urlStr)
+	if err != nil {
+		// Return a safe fallback label for malformed URLs
+		return "[Invalid URL]"
+	}
+	
+	// Basic validation - ensure it's a reasonable URL
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return "[Invalid URL]"
+	}
+	
+	// Return the original URL if it's valid
+	return urlStr
 }
 
 // GenerateGraphVisualization creates a complete graph visualization
