@@ -9,6 +9,7 @@ A high-performance concurrent web crawler built in Go. This crawler efficiently 
 - 🔗 **Domain-restricted crawling** (stays within the same domain)
 - 🌍 **External link tracking** (reports links to other domains)
 - 📈 **Comprehensive reporting** with sorted link count analysis
+- 🎨 **Graph visualization** (generates visual network graphs of page relationships)
 - ⚡ **High performance** with HTTP connection pooling and batch processing
 - 🛡️ **Thread-safe** with proper mutex synchronization and race condition prevention
 - 🌐 **Protocol preservation** (works with HTTP, HTTPS, etc.)
@@ -30,12 +31,18 @@ A high-performance concurrent web crawler built in Go. This crawler efficiently 
    cd Crawler
    ```
 
-2. **Build the crawler:**
+2. **Initialize Go modules and install dependencies:**
+   ```bash
+   go mod init github.com/see-why/Crawler
+   go get github.com/fogleman/gg  # For graph visualization
+   ```
+
+3. **Build the crawler:**
    ```bash
    go build -o crawler
    ```
 
-3. **Run the crawler:**
+4. **Run the crawler:**
    ```bash
    ./crawler "https://example.com" 10 5
    ```
@@ -44,10 +51,10 @@ A high-performance concurrent web crawler built in Go. This crawler efficiently 
 
 ```bash
 # Basic syntax
-./crawler <URL> [max_concurrency] [max_pages] [batch_size]
+./crawler <URL> [max_concurrency] [max_pages] [batch_size] [--graph]
 
 # Or use go run directly
-go run . <URL> [max_concurrency] [max_pages] [batch_size]
+go run . <URL> [max_concurrency] [max_pages] [batch_size] [--graph]
 ```
 
 #### Parameters
@@ -56,6 +63,7 @@ go run . <URL> [max_concurrency] [max_pages] [batch_size]
 - **max_concurrency** (optional): Maximum number of concurrent goroutines (default: 10)
 - **max_pages** (optional): Maximum number of pages to crawl (default: 10)
 - **batch_size** (optional): Number of URLs to process in each batch (default: 5)
+- **--graph** (optional): Generate a visual graph of page relationships (saves as graph.png)
 
 #### Examples
 
@@ -74,6 +82,12 @@ go run . <URL> [max_concurrency] [max_pages] [batch_size]
 
 # Conservative crawling for memory-constrained environments
 ./crawler "https://site.com" 3 15 1
+
+# Generate graph visualization
+./crawler "https://example.com" 5 10 5 --graph
+
+# High-performance crawling with graph generation
+./crawler "https://docs.example.com" 20 50 10 --graph
 ```
 
 #### Environment Variables
@@ -88,7 +102,7 @@ export CRAWLER_MAX_CONCURRENCY=15
 ### Sample Output
 
 ```
-starting crawl of: https://example.com (max concurrency: 5, max pages: 10, batch size: 5)
+starting crawl of: https://example.com (max concurrency: 5, max pages: 10, batch size: 5) [Graph generation enabled]
 Crawling: https://example.com
 Crawling: https://example.com/about
 Crawling: https://example.com/contact
@@ -106,7 +120,28 @@ Found 1 internal links to https://example.com/contact
 Found 5 external links to https://github.com/example/repo
 Found 3 external links to https://twitter.com/example
 Found 1 external links to https://linkedin.com/company/example
+
+Generating graph visualization...
+Graph visualization saved to: graph.png
 ```
+
+## Graph Visualization
+
+The crawler can generate visual network graphs showing the relationships between pages. The graph visualization includes:
+
+- **Blue nodes**: Internal pages (within the crawled domain)
+- **Orange nodes**: External links (to other domains)
+- **Node size**: Proportional to the number of links to that page
+- **Edge thickness**: Proportional to the link count between pages
+- **Automatic layout**: Circular layout for internal pages, linear layout for external links
+
+### Graph Features
+
+- **PNG output**: High-quality raster graphics suitable for viewing and sharing
+- **Smart labeling**: Shortened URLs for readability
+- **Color coding**: Clear visual distinction between internal and external links
+- **Scalable sizing**: Node and edge sizes reflect link importance
+- **Legend**: Built-in legend explaining the visualization elements
 
 ## Performance
 
@@ -133,11 +168,13 @@ The crawler shows significant performance improvements with optimized concurrent
 - **`normalize_url.go`**: URL standardization for deduplication
 - **`get_urls_from_html.go`**: HTML parsing to extract links
 - **`get_html.go`**: Optimized HTTP client with connection pooling
+- **`graph_visualizer.go`**: Graph generation and visualization engine
 
 ### Key Features
 
 - **Thread-safe page counting** with mutex protection
 - **External link tracking** for comprehensive link analysis
+- **Graph visualization** with automatic layout and smart labeling
 - **Atomic check-and-add pattern** to prevent race conditions
 - **Domain boundary enforcement** to stay within target site
 - **Configurable batch processing** for optimal resource usage
