@@ -55,38 +55,35 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 			for _, attr := range n.Attr {
 				if attr.Key == "href" {
 					href := strings.TrimSpace(attr.Val)
-
-					// If href is empty, resolve to base URL
 					if href == "" {
-						normalizedURL := base.String()
-						if !urlSet[normalizedURL] {
-							urlSet[normalizedURL] = true
-							urls = append(urls, normalizedURL)
+						// Empty href: resolve to current page URL
+						resolved := base.ResolveReference(&url.URL{})
+						if resolved != nil {
+							normalizedURL := resolved.String()
+							if !urlSet[normalizedURL] {
+								urlSet[normalizedURL] = true
+								urls = append(urls, normalizedURL)
+							}
 						}
-						break
-					}
-					// Skip fragments and common non-page links
-					if href == "#" ||
+					} else if href == "#" ||
 						strings.HasPrefix(href, "mailto:") ||
 						strings.HasPrefix(href, "tel:") ||
 						strings.HasPrefix(href, "javascript:") ||
 						strings.HasPrefix(href, "data:") {
-						continue
-					}
-
-					// Parse and resolve the URL
-					parsed, parseErr := url.Parse(href)
-					if parseErr != nil {
-						continue // Skip malformed URLs
-					}
-
-					resolved := base.ResolveReference(parsed)
-					if resolved != nil {
-						normalizedURL := resolved.String()
-						// Only add if we haven't seen this URL before
-						if !urlSet[normalizedURL] {
-							urlSet[normalizedURL] = true
-							urls = append(urls, normalizedURL)
+						// Skip fragments and non-page links
+						// Do nothing
+					} else {
+						// Parse and resolve the URL
+						parsed, parseErr := url.Parse(href)
+						if parseErr == nil {
+							resolved := base.ResolveReference(parsed)
+							if resolved != nil {
+								normalizedURL := resolved.String()
+								if !urlSet[normalizedURL] {
+									urlSet[normalizedURL] = true
+									urls = append(urls, normalizedURL)
+								}
+							}
 						}
 					}
 					break // Only process first href attribute
