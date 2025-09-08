@@ -210,7 +210,6 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	}
 
 	// Limit the number of URLs to process to avoid memory explosion
-	maxURLsPerPage := 100
 	if len(urls) > maxURLsPerPage {
 		urls = urls[:maxURLsPerPage]
 		fmt.Printf("Limiting URLs from %s to %d (originally %d)\n", rawCurrentURL, maxURLsPerPage, len(urls))
