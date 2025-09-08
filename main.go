@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
 )
 
 // Page represents a page with its URL and count for sorting
@@ -85,6 +89,42 @@ func printReport(pages map[string]int, externalLinks map[string]int, baseURL str
 	}
 
 	return nil
+}
+
+// printCrawlStatistics prints crawling statistics and performance metrics
+func printCrawlStatistics(cfg *config) {
+	totalReqs := atomic.LoadInt64(cfg.totalRequests)
+	failedReqs := atomic.LoadInt64(cfg.failedRequests)
+
+	fmt.Println()
+	fmt.Println("=============================")
+	fmt.Println("  CRAWLING STATISTICS")
+	fmt.Println("=============================")
+	fmt.Printf("Total HTTP requests: %d\n", totalReqs)
+	fmt.Printf("Failed HTTP requests: %d\n", failedReqs)
+
+	if totalReqs > 0 {
+		successRate := float64(totalReqs-failedReqs) / float64(totalReqs) * 100
+		fmt.Printf("Success rate: %.1f%%\n", successRate)
+	}
+
+	fmt.Printf("Unique pages discovered: %d\n", len(cfg.pages))
+	fmt.Printf("External links found: %d\n", len(cfg.externalLinks))
+
+	// Show error summary per host
+	cfg.hostErrorsMu.RLock()
+	if len(cfg.hostErrors) > 0 {
+		fmt.Println("\nError summary by host:")
+		for host, errorCount := range cfg.hostErrors {
+			if errorCount != nil {
+				count := atomic.LoadInt64(errorCount)
+				if count > 0 {
+					fmt.Printf("  %s: %d errors\n", host, count)
+				}
+			}
+		}
+	}
+	cfg.hostErrorsMu.RUnlock()
 }
 
 func main() {
@@ -199,7 +239,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create a context that can be cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Set up graceful shutdown on interrupt signals
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	// Start a goroutine to handle shutdown signals
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("\nReceived signal %v, initiating graceful shutdown...\n", sig)
+		cancel() // Cancel the context to stop all crawling
+	}()
+
 	// Initialize the config struct
+	var totalRequests, failedRequests int64
 	cfg := &config{
 		pages:              make(map[string]int),
 		externalLinks:      make(map[string]int),
@@ -209,15 +265,40 @@ func main() {
 		mu:                 &sync.Mutex{},
 		concurrencyControl: make(chan struct{}, maxConcurrency),
 		wg:                 &sync.WaitGroup{},
-		ctx:                context.Background(),
+		ctx:                ctx, // Use the cancellable context
+		hostErrors:         make(map[string]*int64),
+		hostErrorsMu:       &sync.RWMutex{},
+		totalRequests:      &totalRequests,
+		failedRequests:     &failedRequests,
 	}
 
 	// Start crawling from the base URL
 	cfg.wg.Add(1)
 	go cfg.crawlPage(baseURLString)
 
-	// Wait for all goroutines to complete
-	cfg.wg.Wait()
+	// Create a timeout context for very large crawls (maximum 10 minutes)
+	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer timeoutCancel()
+
+	// Wait for all goroutines to complete or timeout
+	done := make(chan struct{})
+	go func() {
+		cfg.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Normal completion
+	case <-timeoutCtx.Done():
+		fmt.Printf("\nCrawl timed out after 10 minutes, stopping...\n")
+		cancel() // Cancel the main context
+		// Give goroutines a moment to clean up
+		time.Sleep(2 * time.Second)
+	}
+
+	// Print crawling statistics
+	printCrawlStatistics(cfg)
 
 	// Print the formatted report
 	if err := printReport(cfg.pages, cfg.externalLinks, baseURLString); err != nil {

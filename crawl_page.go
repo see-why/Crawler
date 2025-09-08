@@ -5,7 +5,19 @@ import (
 	"fmt"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
+)
+
+const (
+	// Maximum number of retry attempts for failed requests
+	maxRetries = 3
+	// Base delay for exponential backoff
+	baseRetryDelay = 1 * time.Second
+	// Maximum number of errors to track per host
+	maxErrorsPerHost = 10
+	// Maximum delay for exponential backoff (cap at 30 seconds)
+	maxRetryBackoffDelay = 30 * time.Second
 )
 
 type config struct {
@@ -18,6 +30,12 @@ type config struct {
 	concurrencyControl chan struct{}
 	wg                 *sync.WaitGroup
 	ctx                context.Context
+	// Error tracking for circuit breaker pattern
+	hostErrors   map[string]*int64
+	hostErrorsMu *sync.RWMutex
+	// Statistics
+	totalRequests  *int64
+	failedRequests *int64
 }
 
 // addPageVisit safely adds a page visit to the map and returns whether this is the first visit
@@ -32,13 +50,73 @@ func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool, exceedsLimi
 		return false, false
 	}
 
-	// Check if we've reached the maximum number of pages before adding a NEW page
+	// Check if adding this page would exceed the limit
 	if len(cfg.pages) >= cfg.maxPages {
 		return false, true
 	}
 
+	// This is a new page, add it
 	cfg.pages[normalizedURL] = 1
 	return true, false
+}
+
+// incrementHostError tracks errors per host for circuit breaker pattern
+func (cfg *config) incrementHostError(host string) {
+	cfg.hostErrorsMu.Lock()
+	defer cfg.hostErrorsMu.Unlock()
+
+	if cfg.hostErrors[host] == nil {
+		var zero int64 = 0
+		cfg.hostErrors[host] = &zero
+	}
+	atomic.AddInt64(cfg.hostErrors[host], 1)
+}
+
+// shouldSkipHost determines if we should skip a host due to too many errors
+func (cfg *config) shouldSkipHost(host string) bool {
+	cfg.hostErrorsMu.RLock()
+	defer cfg.hostErrorsMu.RUnlock()
+
+	if errorCount := cfg.hostErrors[host]; errorCount != nil {
+		return atomic.LoadInt64(errorCount) >= maxErrorsPerHost
+	}
+	return false
+}
+
+// Use shared CalculateBackoffDelay from backoff.go
+
+// incrementStats updates request statistics
+func (cfg *config) incrementStats(failed bool) {
+	atomic.AddInt64(cfg.totalRequests, 1)
+	if failed {
+		atomic.AddInt64(cfg.failedRequests, 1)
+	}
+}
+
+// retryWithBackoff implements exponential backoff retry logic
+func (cfg *config) retryWithBackoff(operation func() error) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Safe exponential backoff calculation with overflow protection
+			delay := CalculateBackoffDelay(attempt, baseRetryDelay, maxRetryBackoffDelay)
+
+			select {
+			case <-cfg.ctx.Done():
+				return cfg.ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		if err := operation(); err != nil {
+			lastErr = err
+			continue
+		}
+		return nil
+	}
+
+	return fmt.Errorf("operation failed after %d retries, last error: %w", maxRetries, lastErr)
 }
 
 // crawlPage recursively crawls pages starting from rawCurrentURL, staying within the same domain as baseURL
@@ -61,7 +139,15 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	// Parse the current URL
 	currentURL, err := url.Parse(rawCurrentURL)
 	if err != nil {
+		cfg.incrementStats(true)
 		fmt.Printf("Error parsing current URL %s: %v\n", rawCurrentURL, err)
+		return
+	}
+
+	// Check circuit breaker - skip hosts with too many errors
+	if cfg.shouldSkipHost(currentURL.Hostname()) {
+		cfg.incrementStats(true)
+		fmt.Printf("Skipping %s due to too many previous errors\n", currentURL.Hostname())
 		return
 	}
 
@@ -77,6 +163,8 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	// Get normalized version of the current URL
 	normalizedURL, err := normalizeURL(rawCurrentURL)
 	if err != nil {
+		cfg.incrementStats(true)
+		cfg.incrementHostError(currentURL.Hostname())
 		fmt.Printf("Error normalizing URL %s: %v\n", rawCurrentURL, err)
 		return
 	}
@@ -94,21 +182,37 @@ func (cfg *config) crawlPage(rawCurrentURL string) {
 	fmt.Printf("Crawling: %s\n", rawCurrentURL)
 
 	// Create a context with timeout for this specific request
-	requestCtx, cancel := context.WithTimeout(cfg.ctx, 15*time.Second)
+	requestCtx, cancel := context.WithTimeout(cfg.ctx, 30*time.Second)
 	defer cancel()
 
-	// Get the HTML from the current URL with context
-	htmlBody, err := getHTMLWithContext(requestCtx, rawCurrentURL)
+	// Use retry mechanism for getting HTML
+	var htmlBody string
+	err = cfg.retryWithBackoff(func() error {
+		var htmlErr error
+		htmlBody, htmlErr = getHTMLWithContext(requestCtx, rawCurrentURL)
+		return htmlErr
+	})
+
 	if err != nil {
-		fmt.Printf("Error getting HTML from %s: %v\n", rawCurrentURL, err)
+		cfg.incrementStats(true)
+		cfg.incrementHostError(currentURL.Hostname())
+		fmt.Printf("Error getting HTML from %s after retries: %v\n", rawCurrentURL, err)
 		return
 	}
 
-	// Get all URLs from the HTML
+	cfg.incrementStats(false) // Successful request
+
+	// Get all URLs from the HTML with error handling
 	urls, err := getURLsFromHTML(htmlBody, cfg.baseURL.String())
 	if err != nil {
 		fmt.Printf("Error getting URLs from HTML of %s: %v\n", rawCurrentURL, err)
 		return
+	}
+
+	// Limit the number of URLs to process to avoid memory explosion
+	if len(urls) > maxURLsPerPage {
+		urls = urls[:maxURLsPerPage]
+		fmt.Printf("Limiting URLs from %s to %d (originally %d)\n", rawCurrentURL, maxURLsPerPage, len(urls))
 	}
 
 	// Process URLs in batches to avoid creating too many goroutines at once
