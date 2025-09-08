@@ -95,22 +95,22 @@ func printReport(pages map[string]int, externalLinks map[string]int, baseURL str
 func printCrawlStatistics(cfg *config) {
 	totalReqs := atomic.LoadInt64(cfg.totalRequests)
 	failedReqs := atomic.LoadInt64(cfg.failedRequests)
-	
+
 	fmt.Println()
 	fmt.Println("=============================")
 	fmt.Println("  CRAWLING STATISTICS")
 	fmt.Println("=============================")
 	fmt.Printf("Total HTTP requests: %d\n", totalReqs)
 	fmt.Printf("Failed HTTP requests: %d\n", failedReqs)
-	
+
 	if totalReqs > 0 {
 		successRate := float64(totalReqs-failedReqs) / float64(totalReqs) * 100
 		fmt.Printf("Success rate: %.1f%%\n", successRate)
 	}
-	
+
 	fmt.Printf("Unique pages discovered: %d\n", len(cfg.pages))
 	fmt.Printf("External links found: %d\n", len(cfg.externalLinks))
-	
+
 	// Show error summary per host
 	cfg.hostErrorsMu.RLock()
 	if len(cfg.hostErrors) > 0 {
@@ -246,7 +246,7 @@ func main() {
 	// Set up graceful shutdown on interrupt signals
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
+
 	// Start a goroutine to handle shutdown signals
 	go func() {
 		sig := <-sigChan
