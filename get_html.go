@@ -4,10 +4,35 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
 )
+
+// Network-level errors that are typically retryable
+var retryableErrors = []string{
+	"timeout",
+	"connection refused",
+	"connection reset",
+	"no such host",
+	"network unreachable",
+	"temporary failure",
+	"i/o timeout",
+}
+
+// HTTP status codes that are retryable
+var retryableHTTPCodes = []string{
+	"HTTP error 429", // Too Many Requests
+	"HTTP error 502", // Bad Gateway
+	"HTTP error 503", // Service Unavailable
+	"HTTP error 504", // Gateway Timeout
+	"HTTP error 520", // Cloudflare unknown error
+	"HTTP error 521", // Cloudflare web server down
+	"HTTP error 522", // Cloudflare connection timeout
+	"HTTP error 523", // Cloudflare origin unreachable
+	"HTTP error 524", // Cloudflare timeout
+}
 
 const (
 	// Maximum response body size (10MB)
@@ -20,6 +45,8 @@ const (
 	maxHTTPRetries = 3
 	// Base delay for HTTP retry backoff
 	httpRetryDelay = 500 * time.Millisecond
+	// Maximum delay for exponential backoff (cap at 30 seconds)
+	maxBackoffDelay = 30 * time.Second
 )
 
 // Global HTTP client with optimized settings for concurrent requests
@@ -34,37 +61,60 @@ var httpClient = &http.Client{
 	},
 }
 
-// getHTML fetches the HTML content from the given URL with timeout
-func getHTML(rawURL string) (string, error) {
-	return getHTMLWithContext(context.Background(), rawURL)
+// calculateBackoffDelay calculates exponential backoff delay with overflow protection
+func calculateBackoffDelay(attempt int, baseDelay, maxDelay time.Duration) time.Duration {
+	// Prevent negative or zero attempts
+	if attempt <= 0 {
+		return 0
+	}
+
+	// Use math.Pow for safe calculation, but with reasonable limits
+	// Limit attempt to prevent extreme values
+	if attempt > 10 {
+		attempt = 10 // Cap at 10 to prevent overflow
+	}
+
+	// Calculate: baseDelay * 2^(attempt-1)
+	// Using float64 to avoid integer overflow, then converting back
+	multiplier := math.Pow(2, float64(attempt-1))
+
+	// Convert to duration, checking for overflow
+	if multiplier > float64(maxDelay/baseDelay) {
+		return maxDelay
+	}
+
+	delay := time.Duration(float64(baseDelay) * multiplier)
+
+	// Ensure we don't exceed the maximum
+	if delay > maxDelay {
+		return maxDelay
+	}
+
+	return delay
 }
 
 // getHTMLWithContext fetches HTML with context support for cancellation and robust error handling
 func getHTMLWithContext(ctx context.Context, rawURL string) (string, error) {
 	var lastErr error
-	
+
 	// Retry logic with exponential backoff
 	for attempt := 0; attempt <= maxHTTPRetries; attempt++ {
 		if attempt > 0 {
-			// Calculate backoff delay: base * 2^(attempt-1)
-			multiplier := 1 << uint(attempt-1) // 2^(attempt-1)
-			delay := time.Duration(int64(httpRetryDelay) * int64(multiplier))
-			if delay > 10*time.Second {
-				delay = 10 * time.Second // Cap at 10 seconds
-			}
-			
+			// Safe exponential backoff calculation with overflow protection
+			delay := calculateBackoffDelay(attempt, httpRetryDelay, maxBackoffDelay)
+
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
 			case <-time.After(delay):
 			}
 		}
-		
+
 		// Add rate limiting delay (only on first attempt to avoid double delay)
 		if attempt == 0 {
 			time.Sleep(requestDelay)
 		}
-		
+
 		body, err := performHTTPRequest(ctx, rawURL)
 		if err != nil {
 			lastErr = err
@@ -74,10 +124,10 @@ func getHTMLWithContext(ctx context.Context, rawURL string) (string, error) {
 			}
 			continue
 		}
-		
+
 		return body, nil
 	}
-	
+
 	return "", fmt.Errorf("HTTP request failed after %d retries for URL %s: %w", maxHTTPRetries, rawURL, lastErr)
 }
 
@@ -128,7 +178,7 @@ func performHTTPRequest(ctx context.Context, rawURL string) (string, error) {
 
 	// Create a limited reader to prevent reading massive responses
 	limitedReader := io.LimitReader(resp.Body, maxResponseSize)
-	
+
 	// Read the response body with size limit
 	body, err := io.ReadAll(limitedReader)
 	if err != nil {
@@ -148,44 +198,20 @@ func isRetryableError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errStr := err.Error()
-	
-	// Network-level errors that are typically retryable
-	retryableErrors := []string{
-		"timeout",
-		"connection refused",
-		"connection reset",
-		"no such host",
-		"network unreachable",
-		"temporary failure",
-		"i/o timeout",
-	}
-	
+
 	for _, retryable := range retryableErrors {
 		if strings.Contains(strings.ToLower(errStr), retryable) {
 			return true
 		}
 	}
-	
-	// HTTP status codes that are retryable
-	retryableHTTPCodes := []string{
-		"HTTP error 429", // Too Many Requests
-		"HTTP error 502", // Bad Gateway
-		"HTTP error 503", // Service Unavailable
-		"HTTP error 504", // Gateway Timeout
-		"HTTP error 520", // Cloudflare unknown error
-		"HTTP error 521", // Cloudflare web server down
-		"HTTP error 522", // Cloudflare connection timeout
-		"HTTP error 523", // Cloudflare origin unreachable
-		"HTTP error 524", // Cloudflare timeout
-	}
-	
+
 	for _, retryableCode := range retryableHTTPCodes {
 		if strings.Contains(errStr, retryableCode) {
 			return true
 		}
 	}
-	
+
 	return false
 }
