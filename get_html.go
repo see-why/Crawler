@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -61,38 +60,6 @@ var httpClient = &http.Client{
 	},
 }
 
-// calculateBackoffDelay calculates exponential backoff delay with overflow protection
-func calculateBackoffDelay(attempt int, baseDelay, maxDelay time.Duration) time.Duration {
-	// Prevent negative or zero attempts
-	if attempt <= 0 {
-		return 0
-	}
-
-	// Use math.Pow for safe calculation, but with reasonable limits
-	// Limit attempt to prevent extreme values
-	if attempt > 10 {
-		attempt = 10 // Cap at 10 to prevent overflow
-	}
-
-	// Calculate: baseDelay * 2^(attempt-1)
-	// Using float64 to avoid integer overflow, then converting back
-	multiplier := math.Pow(2, float64(attempt-1))
-
-	// Convert to duration, checking for overflow
-	if multiplier > float64(maxDelay/baseDelay) {
-		return maxDelay
-	}
-
-	delay := time.Duration(float64(baseDelay) * multiplier)
-
-	// Ensure we don't exceed the maximum
-	if delay > maxDelay {
-		return maxDelay
-	}
-
-	return delay
-}
-
 // getHTMLWithContext fetches HTML with context support for cancellation and robust error handling
 func getHTMLWithContext(ctx context.Context, rawURL string) (string, error) {
 	var lastErr error
@@ -101,7 +68,7 @@ func getHTMLWithContext(ctx context.Context, rawURL string) (string, error) {
 	for attempt := 0; attempt <= maxHTTPRetries; attempt++ {
 		if attempt > 0 {
 			// Safe exponential backoff calculation with overflow protection
-			delay := calculateBackoffDelay(attempt, httpRetryDelay, maxBackoffDelay)
+			delay := CalculateBackoffDelay(attempt, httpRetryDelay, maxBackoffDelay)
 
 			select {
 			case <-ctx.Done():
