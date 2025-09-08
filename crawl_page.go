@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -84,29 +83,7 @@ func (cfg *config) shouldSkipHost(host string) bool {
 	return false
 }
 
-// calculateRetryBackoffDelay calculates exponential backoff delay with overflow protection
-func calculateRetryBackoffDelay(attempt int, baseDelay, maxDelay time.Duration) time.Duration {
-	// Prevent negative or zero attempts
-	if attempt <= 0 {
-		return 0
-	}
-
-	// Cap attempt to prevent extreme values and overflow
-	if attempt > 10 {
-		attempt = 10
-	}
-
-	// Use float64 for safe exponential calculation
-	multiplier := math.Pow(2, float64(attempt-1))
-	delay := time.Duration(float64(baseDelay) * multiplier)
-
-	// Ensure we don't exceed the maximum
-	if delay > maxDelay {
-		return maxDelay
-	}
-
-	return delay
-}
+// Use shared CalculateBackoffDelay from backoff.go
 
 // incrementStats updates request statistics
 func (cfg *config) incrementStats(failed bool) {
@@ -123,7 +100,7 @@ func (cfg *config) retryWithBackoff(operation func() error) error {
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			// Safe exponential backoff calculation with overflow protection
-			delay := calculateRetryBackoffDelay(attempt, baseRetryDelay, maxRetryBackoffDelay)
+			delay := CalculateBackoffDelay(attempt, baseRetryDelay, maxRetryBackoffDelay)
 
 			select {
 			case <-cfg.ctx.Done():
