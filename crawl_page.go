@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,8 @@ const (
 	baseRetryDelay = 1 * time.Second
 	// Maximum number of errors to track per host
 	maxErrorsPerHost = 10
+	// Maximum delay for exponential backoff (cap at 30 seconds)
+	maxRetryBackoffDelay = 30 * time.Second
 )
 
 type config struct {
@@ -29,11 +32,11 @@ type config struct {
 	wg                 *sync.WaitGroup
 	ctx                context.Context
 	// Error tracking for circuit breaker pattern
-	hostErrors         map[string]*int64
-	hostErrorsMu       *sync.RWMutex
+	hostErrors   map[string]*int64
+	hostErrorsMu *sync.RWMutex
 	// Statistics
-	totalRequests      *int64
-	failedRequests     *int64
+	totalRequests  *int64
+	failedRequests *int64
 }
 
 // addPageVisit safely adds a page visit to the map and returns whether this is the first visit
@@ -62,7 +65,7 @@ func (cfg *config) addPageVisit(normalizedURL string) (isFirst bool, exceedsLimi
 func (cfg *config) incrementHostError(host string) {
 	cfg.hostErrorsMu.Lock()
 	defer cfg.hostErrorsMu.Unlock()
-	
+
 	if cfg.hostErrors[host] == nil {
 		var zero int64 = 0
 		cfg.hostErrors[host] = &zero
@@ -74,11 +77,35 @@ func (cfg *config) incrementHostError(host string) {
 func (cfg *config) shouldSkipHost(host string) bool {
 	cfg.hostErrorsMu.RLock()
 	defer cfg.hostErrorsMu.RUnlock()
-	
+
 	if errorCount := cfg.hostErrors[host]; errorCount != nil {
 		return atomic.LoadInt64(errorCount) >= maxErrorsPerHost
 	}
 	return false
+}
+
+// calculateRetryBackoffDelay calculates exponential backoff delay with overflow protection
+func calculateRetryBackoffDelay(attempt int, baseDelay, maxDelay time.Duration) time.Duration {
+	// Prevent negative or zero attempts
+	if attempt <= 0 {
+		return 0
+	}
+
+	// Cap attempt to prevent extreme values and overflow
+	if attempt > 10 {
+		attempt = 10
+	}
+
+	// Use float64 for safe exponential calculation
+	multiplier := math.Pow(2, float64(attempt-1))
+	delay := time.Duration(float64(baseDelay) * multiplier)
+
+	// Ensure we don't exceed the maximum
+	if delay > maxDelay {
+		return maxDelay
+	}
+
+	return delay
 }
 
 // incrementStats updates request statistics
@@ -92,30 +119,26 @@ func (cfg *config) incrementStats(failed bool) {
 // retryWithBackoff implements exponential backoff retry logic
 func (cfg *config) retryWithBackoff(operation func() error) error {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			// Exponential backoff: base * 2^(attempt-1)
-			multiplier := 1 << uint(attempt-1) // 2^(attempt-1)
-			delay := time.Duration(int64(baseRetryDelay) * int64(multiplier))
-			if delay > 30*time.Second {
-				delay = 30 * time.Second // Cap at 30 seconds
-			}
-			
+			// Safe exponential backoff calculation with overflow protection
+			delay := calculateRetryBackoffDelay(attempt, baseRetryDelay, maxRetryBackoffDelay)
+
 			select {
 			case <-cfg.ctx.Done():
 				return cfg.ctx.Err()
 			case <-time.After(delay):
 			}
 		}
-		
+
 		if err := operation(); err != nil {
 			lastErr = err
 			continue
 		}
 		return nil
 	}
-	
+
 	return fmt.Errorf("operation failed after %d retries, last error: %w", maxRetries, lastErr)
 }
 
