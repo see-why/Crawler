@@ -21,11 +21,11 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 	if len(htmlBody) == 0 {
 		return []string{}, nil
 	}
-	
+
 	if len(htmlBody) > 10*1024*1024 { // 10MB limit
 		return nil, fmt.Errorf("HTML body too large (%d bytes, max 10MB)", len(htmlBody))
 	}
-	
+
 	var urls []string
 	base, err := url.Parse(rawBaseURL)
 	if err != nil {
@@ -38,39 +38,48 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 	}
 
 	urlSet := make(map[string]bool) // Use map to deduplicate URLs
-	
+
 	var traverse func(*html.Node, int)
 	traverse = func(n *html.Node, depth int) {
 		// Prevent infinite recursion and excessive depth
 		if depth > maxTraversalDepth {
 			return
 		}
-		
+
 		// Stop if we've found enough URLs
 		if len(urlSet) >= maxURLsPerPage {
 			return
 		}
-		
+
 		if n.Type == html.ElementNode && n.Data == "a" {
 			for _, attr := range n.Attr {
 				if attr.Key == "href" {
 					href := strings.TrimSpace(attr.Val)
-					
-					// Skip empty hrefs, fragments, and common non-page links
-					if href == "" || href == "#" || 
+
+					// If href is empty, resolve to base URL
+					if href == "" {
+						normalizedURL := base.String()
+						if !urlSet[normalizedURL] {
+							urlSet[normalizedURL] = true
+							urls = append(urls, normalizedURL)
+						}
+						break
+					}
+					// Skip fragments and common non-page links
+					if href == "#" ||
 						strings.HasPrefix(href, "mailto:") ||
 						strings.HasPrefix(href, "tel:") ||
 						strings.HasPrefix(href, "javascript:") ||
 						strings.HasPrefix(href, "data:") {
 						continue
 					}
-					
+
 					// Parse and resolve the URL
 					parsed, parseErr := url.Parse(href)
 					if parseErr != nil {
 						continue // Skip malformed URLs
 					}
-					
+
 					resolved := base.ResolveReference(parsed)
 					if resolved != nil {
 						normalizedURL := resolved.String()
@@ -84,7 +93,7 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 				}
 			}
 		}
-		
+
 		// Recursively traverse child nodes
 		for c := n.FirstChild; c != nil && len(urlSet) < maxURLsPerPage; c = c.NextSibling {
 			traverse(c, depth+1)
@@ -93,6 +102,6 @@ func getURLsFromHTML(htmlBody, rawBaseURL string) ([]string, error) {
 
 	// Start traversal from the root
 	traverse(doc, 0)
-	
+
 	return urls, nil
 }
