@@ -9,8 +9,6 @@ import (
 )
 
 const (
-	// Maximum number of URLs to extract from a single page
-	maxURLsPerPage = 1000
 	// Maximum depth to traverse in the HTML tree
 	maxTraversalDepth = 50
 )
