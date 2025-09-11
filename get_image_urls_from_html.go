@@ -15,8 +15,8 @@ func getImagesFromHTML(htmlBody string, baseURL *url.URL) ([]string, error) {
 	}
 	var urls []string
 	doc.Find("img[src]").Each(func(_ int, s *goquery.Selection) {
-		src, exists := s.Attr("src")
-		if !exists || src == "" {
+		src, _ := s.Attr("src")
+		if src == "" {
 			return
 		}
 		parsed, err := url.Parse(src)
